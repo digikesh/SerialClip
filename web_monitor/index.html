@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SerialClip</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%23000'/%3E%3Crect x='13' y='2' width='8' height='20' fill='%233987e5' opacity='0.5'/%3E%3Cpath d='M2 17H6V9H10V13H14V5H18V15H22' stroke='%23fff' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+<style>
+  :root {
+    /* surfaces / ink */
+    --bg:        #000000;
+    --surface:   #000000;
+    --ink:       #ffffff;
+    --ink-mute:  #898781;
+    --grid:      #2c2c2a;
+    --border:    #383835;
+    /* status (reserved - never used for series identity) */
+    --good:      #0ca30c;
+    --warning:   #fab219;
+    --critical:  #d03b3b;
+    /* categorical series - fixed order, dark-surface validated (dataviz skill) */
+    --series-1:  #3987e5;
+    --series-2:  #008300;
+    --series-3:  #d55181;
+    --series-4:  #c98500;
+    --series-5:  #199e70;
+    --series-6:  #d95926;
+    --series-7:  #9085e9;
+    --series-8:  #e66767;
+    /* type */
+    --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+    --font-xs:   11px;
+    --font-sm:   12px;
+    --font-md:   13px;
+    /* space / shape */
+    --space-1:   4px;
+    --space-2:   8px;
+    --space-3:   16px;
+    --radius:    2px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: var(--font-mono);
+    overflow: hidden;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) var(--bg);
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: var(--bg); }
+  *::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius); }
+  *::-webkit-scrollbar-thumb:hover { background: var(--ink-mute); }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  header {
+    display: flex; align-items: center; gap: 20px;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #brand { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-sm); letter-spacing: 0.08em; font-weight: 700; }
+  #brand svg { width: 16px; height: 16px; display: block; border: 1px solid var(--border); }
+  #about { display: flex; align-items: center; color: var(--ink-mute); }
+  #about svg { width: 14px; height: 14px; display: block; }
+  #about:hover { color: var(--ink); }
+  #status { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: 0.04em; }
+  #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-mute); }
+  #status .label { color: var(--ink-mute); }
+
+  #port { font-size: var(--font-sm); color: var(--ink-mute); }
+
+  .field { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-sm); color: var(--ink-mute); }
+  .field input {
+    width: 60px; height: 26px; background: transparent; border: 1px solid var(--border); color: var(--ink);
+    font-family: inherit; font-size: var(--font-sm); padding: 0 6px; border-radius: var(--radius);
+    font-variant-numeric: tabular-nums;
+  }
+  .field input:focus { outline: none; border-color: var(--ink); }
+  .field button.icon { height: 26px; width: 26px; padding: 0; justify-content: center; }
+
+  button.icon { padding: 7px; }
+
+  #bufferForm {
+    /* vertically centered on the canvas header line: the timestamp and
+       PAUSED text draw at y=16, this form is 26px tall -> top 3px */
+    position: absolute; top: 3px; right: 12px; height: 26px;
+    background: var(--bg); padding-left: var(--space-2);
+  }
+
+  .spacer { flex: 1; }
+
+  button {
+    font-family: inherit; font-size: var(--font-sm); letter-spacing: 0.04em;
+    background: transparent; color: var(--ink); border: 1px solid var(--border);
+    padding: 8px 16px; cursor: pointer; border-radius: var(--radius);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  button svg { width: 14px; height: 14px; display: block; flex-shrink: 0; }
+  button:hover { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  button#pauseBtn.paused { border-color: var(--warning); color: var(--warning); }
+  button#pauseBtn.paused:hover { background: var(--warning); color: var(--bg); }
+  button#discBtn.disconnected { border-color: var(--critical); color: var(--critical); }
+  button#discBtn.disconnected:hover { background: var(--critical); color: var(--bg); }
+  button#copyBtn { border-color: var(--ink); }
+  button#copyBtn.success { animation: copy-bump 0.6s ease; }
+  @keyframes copy-bump {
+    0%   { transform: scale(1);    border-color: var(--good); color: var(--good); background: transparent; }
+    30%  { transform: scale(1.08); border-color: var(--good); color: var(--good); }
+    70%  { transform: scale(1);    border-color: var(--good); color: var(--good); }
+    100% { transform: scale(1);    border-color: var(--ink);  color: var(--ink); }
+  }
+
+  #toast {
+    position: fixed; top: 96px; right: 16px; font-size: var(--font-sm);
+    padding: var(--space-2) 12px; border: 1px solid var(--border); background: var(--bg);
+    color: var(--ink-mute); opacity: 0; transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; color: var(--ink); }
+  #toast.err { color: var(--critical); border-color: var(--critical); }
+
+  main { flex: 1; position: relative; min-height: 0; }
+  canvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+
+  #segbar {
+    display: flex; gap: var(--space-2); padding: var(--space-2) var(--space-3);
+    border-top: 1px solid var(--border); overflow-x: auto; flex-shrink: 0;
+    font-size: var(--font-sm);
+  }
+  #segbar:empty { display: none; }
+  .seg-chip {
+    display: flex; align-items: center; gap: var(--space-2);
+    border: 1px solid var(--border); border-left-width: 3px;
+    padding: var(--space-1) var(--space-2); border-radius: var(--radius);
+    flex-shrink: 0;
+  }
+  .seg-chip input {
+    background: transparent; border: none; outline: none;
+    color: var(--ink); font-family: inherit; font-size: var(--font-sm);
+    width: 12ch;
+  }
+  .seg-chip .range { color: var(--ink-mute); white-space: nowrap; }
+  .seg-chip .del { cursor: pointer; color: var(--ink-mute); padding: 0 var(--space-1); display: flex; align-items: center; }
+  .seg-chip .del svg { width: 12px; height: 12px; display: block; }
+  .seg-chip .del:hover { color: var(--critical); }
+
+  #legend {
+    display: flex; gap: 24px; padding: 10px 16px; border-top: 1px solid var(--border);
+    flex-wrap: wrap; flex-shrink: 0; font-size: 12px;
+  }
+  #legend .item { display: flex; align-items: center; gap: 8px; }
+  #legend .check { display: flex; align-items: center; color: var(--ink-mute); }
+  #legend .check svg { width: 12px; height: 12px; display: block; }
+  #legend .swatch { width: 10px; height: 10px; flex-shrink: 0; }
+  #legend .name { color: var(--ink-mute); }
+  #legend .val { font-variant-numeric: tabular-nums; min-width: 5ch; text-align: right; }
+
+  #terminal {
+    display: flex; flex-direction: column;
+    height: 240px; flex-shrink: 0;
+    border-top: 1px solid var(--border);
+  }
+  #termLog {
+    flex: 1; overflow-y: auto; padding: 8px 16px;
+    font-size: 12px; line-height: 1.6;
+  }
+  #termLog .line { white-space: pre-wrap; word-break: break-all; }
+  #termLog .line .t { color: var(--ink-mute); margin-right: 10px; }
+  #termLog .line.out { color: var(--series-1); }
+  #termLog .line.out .t { color: var(--series-1); opacity: 0.6; }
+  #termForm {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #termForm .prompt { color: var(--ink-mute); }
+  #termInput {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--ink); font-family: inherit; font-size: 13px;
+  }
+  #termInput::placeholder { color: var(--ink-mute); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="brand">
+      <svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#000"/><rect x="13" y="2" width="8" height="20" fill="#3987e5" opacity="0.5"/><path d="M2 17H6V9H10V13H14V5H18V15H22" stroke="#fff" stroke-width="2" fill="none"/></svg>
+      SerialClip
+    </div>
+    <div id="status"><span class="dot" id="statusDot"></span><span class="label" id="statusLabel">CONNECTING</span></div>
+    <div id="port"></div>
+    <button id="discBtn" class="icon" title="release the COM port for flashing"></button>
+    <div class="spacer"></div>
+    <button id="pauseBtn" class="icon" title="pause"></button>
+    <button id="copyBtn">COPY SEGMENTS</button>
+  </header>
+  <main>
+    <canvas id="chart"></canvas>
+    <form id="bufferForm" class="field">
+      buffer (sec) <input id="bufferInput" type="text" inputmode="numeric" pattern="[0-9]*" value="20">
+      <button type="submit" class="icon" title="apply"></button>
+    </form>
+    <div id="toast"></div>
+  </main>
+  <div id="segbar"></div>
+  <div id="legend"></div>
+  <section id="terminal">
+    <div id="termLog"></div>
+    <form id="termForm">
+      <span class="prompt">&gt;</span>
+      <input id="termInput" type="text" autocomplete="off" placeholder="send to device — Enter to submit">
+      <a id="about" href="https://www.creativetech.wtf" target="_blank" rel="noopener"
+         title="made by creativetech.wtf — demystifying tech in design"></a>
+    </form>
+  </section>
+</div>
+
+<script>
+// Icons: pixelarticons (npm i pixelarticons), inlined so they render offline
+// and inherit the button's currentColor. "pause" is hand-drawn in the same
+// 24-grid pixel style - the set doesn't ship one.
+const ICONS = {
+  pause: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H6v16h4V4Zm8 0h-4v16h4V4Z"/></svg>',
+  play: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15 11h-2V9h2zm0 4h-2v-2h2zm-2 2h-2v-2h2zm0-8h-2V7h2zm-2-2H9V5h2zM9 21H7V3h2zm6-8h2v-2h-2zm-6 4h2v2H9z"/></svg>',
+  unlink: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2z"/></svg>',
+  link: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2zM7 11h10v2H7z"/></svg>',
+  copy: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M8 6h12v2H8zM4 2h12v2H4zm2 6h2v12H6zM2 4h2v12H2zm6 16h12v2H8zM20 8h2v12h-2zm-4-4h2v2h-2zM4 16h2v2H4z"/></svg>',
+  check: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M10 18H8v-2h2v2Zm-2-2H6v-2h2v2Zm4-2v2h-2v-2h2Zm-6 0H4v-2h2v2Zm8 0h-2v-2h2v2Zm2-2h-2v-2h2v2Zm2-2h-2V8h2v2Zm2-2h-2V6h2v2Z"/></svg>',
+  close: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19H5V17H7V19ZM19 19H17V17H19V19ZM9 15V17H7V15H9ZM17 17H15V15H17V17ZM11 15H9V13H11V15ZM15 15H13V13H15V15ZM13 13H11V11H13V13ZM11 11H9V9H11V11ZM15 11H13V9H15V11ZM9 9H7V7H9V9ZM17 9H15V7H17V9ZM7 7H5V5H7V7ZM19 7H17V5H19V7Z"/></svg>',
+  checkboxOn: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2h16v2H4zm0 18h16v2H4zM2 4h2v16H2zm18 0h2v16h-2zM7 12h2v2H7zm2 2h2v2H9zm2-2h2v2h-2zm2-2h2v2h-2zm2-2h2v2h-2z"/></svg>',
+  checkboxOff: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2h16v2H4zm0 18h16v2H4zM2 4h2v16H2zm18 0h2v16h-2z"/></svg>',
+  human: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M10 2h4v4h-4zM7 7h10v2H7zm2 2h2v7H9zm4 0h2v7h-2zm-4 7h2v6H9zm4 0h2v6h-2zm-2-2h2v2h-2zM5 5h2v2H5zM3 3h2v2H3zm14 2h2v2h-2zm2-2h2v2h-2z"/></svg>',
+};
+
+function btnContent(btn, icon, label) {
+  btn.innerHTML = ICONS[icon] + (label ? `<span>${label}</span>` : '');
+}
+
+// Design tokens - single source of truth is the CSS :root block; read the
+// resolved values here so canvas (which can't consume var(...) directly)
+// stays in sync with the stylesheet instead of hardcoding its own copies.
+const rootStyle = getComputedStyle(document.documentElement);
+const tok = (name) => rootStyle.getPropertyValue(name).trim();
+const T = {
+  bg: tok('--bg'),
+  ink: tok('--ink'),
+  inkMute: tok('--ink-mute'),
+  grid: tok('--grid'),
+  border: tok('--border'),
+  good: tok('--good'),
+  warning: tok('--warning'),
+  critical: tok('--critical'),
+  fontMono: tok('--font-mono'),
+  series: [1, 2, 3, 4, 5, 6, 7, 8].map(i => tok(`--series-${i}`)),
+};
+const fontXs = () => `${tok('--font-xs')} ${T.fontMono}`;
+const fontSm = () => `${tok('--font-sm')} ${T.fontMono}`;
+
+// bufferSeconds is the ONE control for how much history the tool keeps -
+// it drives both the live rolling chart's width and the retention limit
+// (and therefore how far back a hold-to-record can reach).
+let bufferSeconds = 20;
+
+const canvas = document.getElementById('chart');
+const ctx = canvas.getContext('2d');
+const statusDot = document.getElementById('statusDot');
+const statusLabel = document.getElementById('statusLabel');
+const portEl = document.getElementById('port');
+const bufferForm = document.getElementById('bufferForm');
+const bufferInput = document.getElementById('bufferInput');
+const pauseBtn = document.getElementById('pauseBtn');
+const discBtn = document.getElementById('discBtn');
+const copyBtn = document.getElementById('copyBtn');
+const toast = document.getElementById('toast');
+const legendEl = document.getElementById('legend');
+const segbar = document.getElementById('segbar');
+const termLog = document.getElementById('termLog');
+const termForm = document.getElementById('termForm');
+const termInput = document.getElementById('termInput');
+
+bufferInput.value = bufferSeconds;
+bufferInput.addEventListener('focus', () => bufferInput.select());
+bufferInput.addEventListener('input', () => {
+  const cleaned = bufferInput.value.replace(/[^0-9]/g, '');
+  if (cleaned !== bufferInput.value) bufferInput.value = cleaned;
+});
+bufferForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = parseFloat(bufferInput.value);
+  if (!isFinite(v) || v <= 0) { bufferInput.value = bufferSeconds; return; }
+  bufferSeconds = v;
+  if (frozenView === null) {
+    // only trim against the moving live edge; frozen data stays intact
+    const cutoff = dataNow() - bufferSeconds;
+    for (const name in channels) {
+      channels[name].points = channels[name].points.filter(p => p.t >= cutoff);
+    }
+  }
+  showToast(`buffer set to ${bufferSeconds}s`);
+});
+
+const MAX_LOG_LINES = 500;
+
+function appendLog(text, ts, isOut) {
+  // standard console behavior: only follow the tail if already at the bottom,
+  // so scrolling up to read history isn't fought by incoming lines
+  const nearBottom = termLog.scrollHeight - termLog.scrollTop - termLog.clientHeight < 40;
+  const div = document.createElement('div');
+  div.className = 'line' + (isOut ? ' out' : '');
+  const t = document.createElement('span');
+  t.className = 't';
+  t.textContent = new Date(ts * 1000).toLocaleTimeString();
+  div.appendChild(t);
+  div.appendChild(document.createTextNode((isOut ? '> ' : '') + text));
+  termLog.appendChild(div);
+  while (termLog.children.length > MAX_LOG_LINES) termLog.removeChild(termLog.firstChild);
+  if (nearBottom) termLog.scrollTop = termLog.scrollHeight;
+}
+
+termForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const val = termInput.value;
+  if (!val) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ cmd: 'write', data: val }));
+    appendLog(val, Date.now() / 1000, true);
+  } else {
+    showToast('not connected', true);
+  }
+  termInput.value = '';
+});
+
+let channels = {};   // name -> {color, points: [{t,v}]}
+let colorIndex = 0;
+let ws;
+let wsUp = false;
+
+// Tape-recorder model - the chart is the tape:
+//  - PAUSE (client, or chart click): the tape stops. Incoming samples are
+//    DROPPED, not buffered - what you see frozen is exactly what is stored.
+//    On resume, recording continues spliced right where it stopped; the
+//    paused stretch never existed on the timeline.
+//  - DISCONNECT (server): same timeline semantics, but also releases the
+//    COM port so flashing can use it.
+//  - frozenView: data-time the display holds at; null = follow live edge.
+//    Stays set from pause/disconnect until the first freshly accepted
+//    sample re-splices the timeline (avoids any gap flicker).
+let paused = false;
+let portOpen = true;
+let frozenView = null;
+
+// Points are stored on a spliced "data time" axis: whenever the incoming
+// stream has a gap (pause, flash, disconnect), the gap's duration is added
+// to timeOffset so the post-gap samples land right next to the pre-gap ones
+// - paused stretches simply don't exist on the chart.
+let timeOffset = 0;
+let lastRawT = null;
+let intervalEma = 0.1;  // running estimate of the normal sample spacing
+let forceSplice = false;  // set when a known drop-window (pause/reconnect) ends
+const dataNow = () => Date.now() / 1000 - timeOffset;
+
+function spliceTime(rawT) {
+  if (lastRawT !== null) {
+    const dt = rawT - lastRawT;
+    if (forceSplice && dt > intervalEma) {
+      // the tape was deliberately stopped - splice exactly, no threshold
+      timeOffset += dt - intervalEma;
+    } else if (dt > Math.max(intervalEma * 5, 0.5)) {
+      timeOffset += dt - intervalEma;   // collapse the gap to one normal step
+    } else if (dt > 0) {
+      intervalEma = intervalEma * 0.9 + dt * 0.1;
+    }
+  }
+  forceSplice = false;
+  lastRawT = rawT;
+  return rawT - timeOffset;
+}
+
+function nextColor() {
+  const c = T.series[colorIndex % T.series.length];
+  colorIndex++;
+  return c;
+}
+
+function setStatus(state) {
+  const map = {
+    connecting:   [ 'var(--ink-mute)', 'CONNECTING' ],
+    live:         [ 'var(--good)',     'LIVE' ],
+    paused:       [ 'var(--warning)',  'PAUSED' ],
+    disconnected: [ 'var(--critical)', 'PORT RELEASED' ],
+    offline:      [ 'var(--ink-mute)', 'SERVER OFFLINE — retrying' ],
+  };
+  const [color, label] = map[state];
+  statusDot.style.background = color;
+  statusLabel.textContent = label;
+  statusLabel.style.color = color;
+}
+
+function refreshStatus() {
+  if (!wsUp) setStatus('offline');
+  else if (!portOpen) setStatus('disconnected');
+  else if (paused) setStatus('paused');
+  else setStatus('live');
+}
+
+function setPaused(p) {
+  if (p === paused) return;
+  paused = p;
+  if (paused) {
+    frozenView = lastView ? lastView.tEnd : dataNow();
+  } else {
+    forceSplice = true;   // whatever was skipped while paused gets spliced exactly
+  }
+  // on resume frozenView stays set - the display holds until the first
+  // accepted sample splices the timeline and clears it
+  btnContent(pauseBtn, paused ? 'play' : 'pause');
+  pauseBtn.title = paused ? 'resume' : 'pause';
+  pauseBtn.classList.toggle('paused', paused);
+  refreshStatus();
+}
+
+function showToast(msg, isErr) {
+  toast.textContent = msg;
+  toast.classList.toggle('err', !!isErr);
+  toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+function connect() {
+  setStatus('connecting');
+  ws = new WebSocket('ws://localhost:8765');
+  ws.onopen = () => { wsUp = true; refreshStatus(); };
+  ws.onclose = () => { wsUp = false; refreshStatus(); setTimeout(connect, 1000); };
+  ws.onerror = () => {};
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'log') {
+      appendLog(msg.line, msg.t, false);
+    } else if (msg.type === 'sample') {
+      if (paused) return;   // tape stopped: samples during pause are not recorded
+      const t = spliceTime(msg.t);
+      frozenView = null;    // fresh sample accepted - timeline is spliced, follow live
+      const cutoff = dataNow() - bufferSeconds;
+      for (const name in msg.values) {
+        if (!channels[name]) channels[name] = { color: nextColor(), points: [] };
+        const ch = channels[name];
+        ch.points.push({ t, v: msg.values[name] });
+        while (ch.points.length && ch.points[0].t < cutoff) ch.points.shift();
+      }
+    } else if (msg.type === 'status') {
+      const wasOpen = portOpen;
+      portOpen = !msg.paused;   // server-side "paused" means the COM port is released
+      if (!portOpen && wasOpen && frozenView === null) {
+        frozenView = lastView ? lastView.tEnd : dataNow();
+      }
+      if (portOpen && !wasOpen) forceSplice = true;   // reconnect: splice exactly
+      btnContent(discBtn, portOpen ? 'unlink' : 'link');
+      discBtn.title = portOpen ? 'disconnect — release the COM port for flashing' : 'reconnect';
+      discBtn.classList.toggle('disconnected', !portOpen);
+      refreshStatus();
+    }
+  };
+}
+
+pauseBtn.addEventListener('click', () => setPaused(!paused));
+
+discBtn.addEventListener('click', () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ cmd: portOpen ? 'pause' : 'resume' }));
+  } else {
+    showToast('server not connected', true);
+  }
+});
+
+// ---- timeline segments (Audacity-style labeled regions) ----
+// click chart = toggle pause (same as PAUSE button);
+// drag = select a region -> becomes a labeled, colored segment.
+let segments = [];        // {id, t0, t1, label, color}
+let segCounter = 0;
+let dragStartX = null;
+let dragCurX = null;
+let wasPausedOnDown = false;
+let lastView = null;      // px<->time mapping of the last drawn live frame
+
+const PAD = { L: 52, R: 12, T: 34, B: 14 };
+
+function pxToTime(x) {
+  if (!lastView) return null;
+  const frac = (x - PAD.L) / lastView.plotW;
+  return lastView.tStart + Math.min(Math.max(frac, 0), 1) * lastView.span;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (!lastView) return;
+  canvas.setPointerCapture(e.pointerId);
+  wasPausedOnDown = paused;
+  if (!paused) setPaused(true);
+  dragStartX = e.offsetX;
+  dragCurX = e.offsetX;
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (dragStartX !== null) dragCurX = e.offsetX;
+});
+
+function onCanvasUp(e) {
+  if (dragStartX === null) return;
+  try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+  const isClick = Math.abs(dragCurX - dragStartX) < 5;
+  if (isClick) {
+    if (wasPausedOnDown) setPaused(false);
+    // else: pointerdown just paused - stay paused
+  } else {
+    const t0 = pxToTime(Math.min(dragStartX, dragCurX));
+    const t1 = pxToTime(Math.max(dragStartX, dragCurX));
+    if (t0 !== null && t1 !== null && t1 - t0 > 0.05) {
+      segCounter++;
+      segments.push({
+        id: segCounter,
+        t0, t1,
+        label: 'S' + segCounter,
+        color: T.series[(segCounter + 2) % T.series.length],
+      });
+      renderSegbar();
+    }
+  }
+  dragStartX = null;
+  dragCurX = null;
+}
+canvas.addEventListener('pointerup', onCanvasUp);
+canvas.addEventListener('pointercancel', onCanvasUp);
+
+function renderSegbar() {
+  segbar.innerHTML = '';
+  for (const seg of segments) {
+    const chip = document.createElement('div');
+    chip.className = 'seg-chip';
+    chip.style.borderLeftColor = seg.color;
+
+    const inp = document.createElement('input');
+    inp.value = seg.label;
+    inp.title = 'segment label';
+    inp.addEventListener('input', () => { seg.label = inp.value; });
+
+    const range = document.createElement('span');
+    range.className = 'range';
+    range.textContent = `${(seg.t1 - seg.t0).toFixed(1)}s`;
+    range.title = `${new Date((seg.t0 + timeOffset) * 1000).toLocaleTimeString()} - ${new Date((seg.t1 + timeOffset) * 1000).toLocaleTimeString()}`;
+
+    const del = document.createElement('span');
+    del.className = 'del';
+    del.innerHTML = ICONS.close;
+    del.title = 'delete segment';
+    del.addEventListener('click', () => {
+      segments = segments.filter(s => s !== seg);
+      renderSegbar();
+    });
+
+    chip.append(inp, range, del);
+    segbar.appendChild(chip);
+  }
+}
+
+copyBtn.addEventListener('click', () => {
+  if (!segments.length) { showToast('no segments — drag on the chart to select one', true); return; }
+  exportSegments();
+});
+copyBtn.addEventListener('animationend', () => copyBtn.classList.remove('success'));
+
+async function exportSegments() {
+  if (!window.isSecureContext) {
+    showToast('not a secure context — clipboard image write is blocked here', true);
+    return;
+  }
+  if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+    showToast('this browser has no Clipboard image API', true);
+    return;
+  }
+
+  const segs = [...segments].sort((a, b) => a.t0 - b.t0);
+  const spanT0 = segs[0].t0;
+  const spanT1 = Math.max(...segs.map(s => s.t1));
+  const margin = Math.max((spanT1 - spanT0) * 0.05, 0.5);
+
+  const W = 1200, H = 675, dpr = 2;
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = W * dpr;
+  exportCanvas.height = H * dpr;
+  const ectx = exportCanvas.getContext('2d');
+  ectx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawFrame(ectx, W, H, spanT0 - margin, spanT1 + margin);
+
+  const MAX_TEXT_POINTS = 300;
+  const VALUES_PER_ROW = 10;
+  function downsample(pts, maxPoints) {
+    if (pts.length <= maxPoints) return pts;
+    const step = pts.length / maxPoints;
+    const out = [];
+    for (let i = 0; i < maxPoints; i++) out.push(pts[Math.floor(i * step)]);
+    return out;
+  }
+  function formatRows(pts, base) {
+    const rows = [];
+    for (let i = 0; i < pts.length; i += VALUES_PER_ROW) {
+      const row = pts.slice(i, i + VALUES_PER_ROW);
+      const t = (row[0].t - base).toFixed(1).padStart(5, ' ');
+      const vals = row.map(p => p.v.toFixed(1).padStart(7, ' ')).join(' ');
+      rows.push(`  t=${t}s  ${vals}`);
+    }
+    return rows.join('\n');
+  }
+
+  const lines = [
+    `SerialClip capture — ${segs.length} segment(s)  (times exclude paused stretches)`,
+    '',
+  ];
+  for (const seg of segs) {
+    lines.push(`== ${seg.label} ==  ${new Date((seg.t0 + timeOffset) * 1000).toLocaleTimeString()} - ${new Date((seg.t1 + timeOffset) * 1000).toLocaleTimeString()}  (${(seg.t1 - seg.t0).toFixed(1)}s)`);
+    let any = false;
+    for (const name in channels) {
+      if (channels[name].visible === false) continue;
+      const pts = channels[name].points.filter(p => p.t >= seg.t0 && p.t <= seg.t1);
+      if (!pts.length) continue;
+      any = true;
+      const vals = pts.map(p => p.v);
+      const min = Math.min(...vals), max = Math.max(...vals), last = vals[vals.length - 1];
+      const sampled = downsample(pts, MAX_TEXT_POINTS);
+      const note = sampled.length < pts.length ? `  [downsampled ${pts.length} -> ${sampled.length}]` : '';
+      lines.push(`${name}: min ${min.toFixed(1)}  max ${max.toFixed(1)}  last ${last.toFixed(1)}  n=${pts.length}${note}`);
+      lines.push(formatRows(sampled, seg.t0));
+    }
+    if (!any) lines.push('(no data in buffer for this segment)');
+    lines.push('');
+  }
+  const summaryText = lines.join('\n').trimEnd();
+
+  exportCanvas.toBlob(async (blob) => {
+    if (!blob) { showToast('capture failed - no blob produced', true); return; }
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        'image/png': blob,
+        'text/plain': new Blob([summaryText], { type: 'text/plain' }),
+      })]);
+      copyBtn.classList.remove('success');
+      void copyBtn.offsetWidth;   // restart the animation if it's mid-flight
+      copyBtn.classList.add('success');
+      showToast(`copied ${segs.length} segment(s) — paste into Claude Code (Ctrl+V)`);
+    } catch (err) {
+      console.error('clipboard write failed', err);
+      showToast('clipboard failed: ' + err.name + ' - ' + err.message, true);
+    }
+  }, 'image/png');
+}
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+// covers window resizes AND layout reflows (e.g. the segment bar appearing
+// below the chart) - a stale backing bitmap leaves squeezed artifacts
+new ResizeObserver(resizeCanvas).observe(canvas);
+
+function sendVisibility() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const vis = {};
+    for (const name in channels) vis[name] = channels[name].visible !== false;
+    ws.send(JSON.stringify({ cmd: 'visibility', channels: vis }));
+  }
+}
+
+// Legend items are built ONCE per channel and updated in place - rebuilding
+// them every frame destroys the element mid-click, so clicks never register.
+const legendItems = {};   // name -> {item, box, val, shownVisible}
+
+function renderLegend() {
+  for (const name in channels) {
+    const ch = channels[name];
+    if (ch.visible === undefined) ch.visible = true;
+    let li = legendItems[name];
+    if (!li) {
+      const item = document.createElement('div');
+      item.className = 'item';
+      item.style.cursor = 'pointer';
+      const box = document.createElement('span');
+      box.className = 'check';
+      const swatch = document.createElement('div');
+      swatch.className = 'swatch';
+      swatch.style.background = ch.color;
+      const nm = document.createElement('span');
+      nm.className = 'name';
+      nm.textContent = name;
+      const val = document.createElement('span');
+      val.className = 'val';
+      item.append(box, swatch, nm, val);
+      item.addEventListener('click', () => {
+        ch.visible = !ch.visible;
+        sendVisibility();
+      });
+      legendEl.appendChild(item);
+      li = legendItems[name] = { item, box, val, shownVisible: null };
+    }
+    const last = ch.points[ch.points.length - 1];
+    const valText = last ? last.v.toFixed(1) : '--';
+    if (li.val.textContent !== valText) li.val.textContent = valText;
+    if (li.shownVisible !== ch.visible) {
+      li.shownVisible = ch.visible;
+      li.item.style.opacity = ch.visible ? '1' : '0.35';
+      li.item.title = 'click to ' + (ch.visible ? 'hide' : 'show');
+      li.box.innerHTML = ch.visible ? ICONS.checkboxOn : ICONS.checkboxOff;
+    }
+  }
+}
+
+function drawFrame(targetCtx, W, H, tStart, tEnd) {
+  const padL = PAD.L, padR = PAD.R, padT = PAD.T, padB = PAD.B;
+
+  targetCtx.fillStyle = T.bg;
+  targetCtx.fillRect(0, 0, W, H);
+
+  const span = Math.max(tEnd - tStart, 0.001);
+
+  const names = Object.keys(channels).filter(n => channels[n].visible !== false);
+  const visiblePts = {};
+  let minV = Infinity, maxV = -Infinity;
+  for (const name of names) {
+    const pts = channels[name].points.filter(p => p.t >= tStart && p.t <= tEnd);
+    visiblePts[name] = pts;
+    for (const p of pts) {
+      if (p.v < minV) minV = p.v;
+      if (p.v > maxV) maxV = p.v;
+    }
+  }
+  if (!isFinite(minV)) { minV = 0; maxV = 1; }
+  if (minV === maxV) { minV -= 1; maxV += 1; }
+  const pad = (maxV - minV) * 0.1;
+  minV -= pad; maxV += pad;
+
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const xOf = (t) => padL + plotW * ((t - tStart) / span);
+  const yOf = (v) => padT + plotH * (1 - (v - minV) / (maxV - minV));
+
+  targetCtx.strokeStyle = T.grid;
+  targetCtx.lineWidth = 1;
+  targetCtx.fillStyle = T.inkMute;
+  targetCtx.font = fontXs();
+  targetCtx.textBaseline = 'middle';
+  const GRID = 4;
+  for (let i = 0; i <= GRID; i++) {
+    const y = padT + plotH * (i / GRID);
+    targetCtx.beginPath();
+    targetCtx.moveTo(padL, y + 0.5);
+    targetCtx.lineTo(W - padR, y + 0.5);
+    targetCtx.stroke();
+    const val = maxV - (maxV - minV) * (i / GRID);
+    targetCtx.fillText(val.toFixed(0), 4, y);
+  }
+
+  // segment bands behind the data lines
+  for (const seg of segments) {
+    if (seg.t1 < tStart || seg.t0 > tEnd) continue;
+    const x0 = xOf(Math.max(seg.t0, tStart));
+    const x1 = xOf(Math.min(seg.t1, tEnd));
+    targetCtx.fillStyle = seg.color + '2b';
+    targetCtx.fillRect(x0, padT, x1 - x0, plotH);
+    targetCtx.fillStyle = seg.color;
+    targetCtx.fillRect(x0, padT, 1.5, plotH);
+    targetCtx.fillRect(x1 - 1.5, padT, 1.5, plotH);
+    targetCtx.font = fontXs();
+    targetCtx.textBaseline = 'top';
+    targetCtx.fillText(seg.label, x0 + 5, padT + 5);
+    targetCtx.textBaseline = 'middle';
+  }
+
+  for (const name of names) {
+    const ch = channels[name];
+    const pts = visiblePts[name];
+    if (pts.length < 2) continue;
+
+    // Break the line across gaps (paused stretches, dropouts) instead of
+    // drawing a straight connector implying data that was never sampled.
+    const intervals = [];
+    for (let i = 1; i < pts.length; i++) intervals.push(pts[i].t - pts[i - 1].t);
+    intervals.sort((a, b) => a - b);
+    const medianInterval = intervals.length ? intervals[Math.floor(intervals.length / 2)] : 0.1;
+    const gapThreshold = Math.max(medianInterval * 5, 0.5);
+
+    targetCtx.strokeStyle = ch.color;
+    targetCtx.lineWidth = 2;
+    targetCtx.beginPath();
+    pts.forEach((p, i) => {
+      const x = xOf(p.t), y = yOf(p.v);
+      if (i === 0 || (p.t - pts[i - 1].t) > gapThreshold) targetCtx.moveTo(x, y);
+      else targetCtx.lineTo(x, y);
+    });
+    targetCtx.stroke();
+    const last = pts[pts.length - 1];
+    targetCtx.fillStyle = ch.color;
+    targetCtx.beginPath();
+    targetCtx.arc(xOf(last.t), yOf(last.v), 4, 0, Math.PI * 2);
+    targetCtx.fill();
+  }
+
+  targetCtx.fillStyle = T.ink;
+  targetCtx.font = fontSm();
+  // spliced data-time -> approximate wall clock for display (exact after the last gap)
+  const rangeLabel = `${new Date((tStart + timeOffset) * 1000).toLocaleTimeString()} – ${new Date((tEnd + timeOffset) * 1000).toLocaleTimeString()}`;
+  targetCtx.fillText(rangeLabel, padL, 16);
+  lastRangeW = targetCtx.measureText(rangeLabel).width;
+}
+let lastRangeW = 0;
+
+function liveLoop() {
+  try {
+    const rect = canvas.getBoundingClientRect();
+    const W = rect.width, H = rect.height;
+    // frozenView holds the display through pause/disconnect and the resume
+    // handshake; cleared by the first freshly accepted (spliced) sample
+    const now = frozenView !== null ? frozenView : dataNow();
+    const tStart = now - bufferSeconds;
+
+    // a segment fully scrolled off the left edge has no backing data anymore
+    if (frozenView === null && segments.length) {
+      const kept = segments.filter(s => s.t1 >= tStart);
+      if (kept.length !== segments.length) {
+        segments = kept;
+        renderSegbar();
+      }
+    }
+
+    drawFrame(ctx, W, H, tStart, now);
+    lastView = { tStart, tEnd: now, span: now - tStart, plotW: W - PAD.L - PAD.R };
+
+    // in-progress drag selection band
+    if (dragStartX !== null && Math.abs(dragCurX - dragStartX) >= 5) {
+      const x0 = Math.min(dragStartX, dragCurX);
+      const x1 = Math.max(dragStartX, dragCurX);
+      const plotH = H - PAD.T - PAD.B;
+      ctx.fillStyle = T.ink + '22';
+      ctx.fillRect(x0, PAD.T, x1 - x0, plotH);
+      ctx.strokeStyle = T.ink;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0 + 0.5, PAD.T + 0.5, x1 - x0 - 1, plotH - 1);
+    }
+
+    if (paused) {
+      ctx.fillStyle = T.warning;
+      ctx.font = fontSm();
+      ctx.textBaseline = 'middle';
+      ctx.fillText('PAUSED — click chart to resume', PAD.L + lastRangeW + 20, 16);
+    }
+
+    renderLegend();
+  } catch (err) {
+    console.error('liveLoop frame error (display kept running):', err);
+  }
+  requestAnimationFrame(liveLoop);
+}
+
+fetch('/control/status')
+  .then(r => r.json())
+  .then(s => { portEl.textContent = s.port; })
+  .catch(() => {});
+
+document.getElementById('about').innerHTML = ICONS.human;
+btnContent(pauseBtn, 'pause');
+btnContent(discBtn, 'unlink');
+btnContent(copyBtn, 'copy', 'COPY SEGMENTS');
+btnContent(bufferForm.querySelector('button'), 'check');
+
+resizeCanvas();
+connect();
+requestAnimationFrame(liveLoop);
+</script>
+</body>
+</html>
