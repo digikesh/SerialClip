@@ -1,10 +1,6 @@
 # SerialClip
 
-Snip your sensor data, paste it to your AI.
-
-Made by [creativetech.wtf](https://www.creativetech.wtf) — demystifying tech in
-design, from Singapore. *"Pondering about creativity, tech, and whatever the
-f\*ck lies in between."*
+Clip your Serial data, paste it to your AI.
 
 A minimal, black-and-white, browser-based live monitor for Arduino/ESP32 serial
 data — built to make hardware experiments easy to share with AI coding agents
@@ -118,3 +114,5 @@ Pauses the monitor (if running), compiles, uploads, resumes — win or lose.
 - UI design tokens (colors, type, spacing) live once in the CSS `:root`; the
   canvas reads the same tokens at runtime. Icons are inlined pixelarticons
   (`npm i pixelarticons` in `web_monitor/` is only needed to source new ones).
+
+  Made by [creativetech.wtf](https://www.creativetech.wtf)
