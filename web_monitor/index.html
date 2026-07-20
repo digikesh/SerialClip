@@ -101,8 +101,8 @@
   button#pauseBtn.paused:hover { background: var(--warning); color: var(--bg); }
   button#discBtn.disconnected { border-color: var(--critical); color: var(--critical); }
   button#discBtn.disconnected:hover { background: var(--critical); color: var(--bg); }
-  button#copyBtn { border-color: var(--ink); }
-  button#copyBtn.success { animation: copy-bump 0.6s ease; }
+  button#copyBtn, button#copyTextBtn { border-color: var(--ink); }
+  button#copyBtn.success, button#copyTextBtn.success { animation: copy-bump 0.6s ease; }
   @keyframes copy-bump {
     0%   { transform: scale(1);    border-color: var(--good); color: var(--good); background: transparent; }
     30%  { transform: scale(1.08); border-color: var(--good); color: var(--good); }
@@ -193,6 +193,7 @@
     <button id="discBtn" class="icon" title="release the COM port for flashing"></button>
     <div class="spacer"></div>
     <button id="pauseBtn" class="icon" title="pause"></button>
+    <button id="copyTextBtn" title="text only — for fields that would grab the image and drop the text">COPY TEXT</button>
     <button id="copyBtn">COPY SEGMENTS</button>
   </header>
   <main>
@@ -226,6 +227,7 @@ const ICONS = {
   unlink: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2z"/></svg>',
   link: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h7v2H4zm0 10h7v2H4zM2 8h2v8H2zm18-2h-7v2h7zm0 10h-7v2h7zm2-8h-2v8h2zM7 11h10v2H7z"/></svg>',
   copy: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M8 6h12v2H8zM4 2h12v2H4zm2 6h2v12H6zM2 4h2v12H2zm6 16h12v2H8zM20 8h2v12h-2zm-4-4h2v2h-2zM4 16h2v2H4z"/></svg>',
+  text: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M2 5h20v2H2zm0 6h12v2H2zm0 6h16v2H2z"/></svg>',
   check: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M10 18H8v-2h2v2Zm-2-2H6v-2h2v2Zm4-2v2h-2v-2h2Zm-6 0H4v-2h2v2Zm8 0h-2v-2h2v2Zm2-2h-2v-2h2v2Zm2-2h-2V8h2v2Zm2-2h-2V6h2v2Z"/></svg>',
   close: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19H5V17H7V19ZM19 19H17V17H19V19ZM9 15V17H7V15H9ZM17 17H15V15H17V17ZM11 15H9V13H11V15ZM15 15H13V13H15V15ZM13 13H11V11H13V13ZM11 11H9V9H11V11ZM15 11H13V9H15V11ZM9 9H7V7H9V9ZM17 9H15V7H17V9ZM7 7H5V5H7V7ZM19 7H17V5H19V7Z"/></svg>',
   checkboxOn: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2h16v2H4zm0 18h16v2H4zM2 4h2v16H2zm18 0h2v16h-2zM7 12h2v2H7zm2 2h2v2H9zm2-2h2v2h-2zm2-2h2v2h-2zm2-2h2v2h-2z"/></svg>',
@@ -272,6 +274,7 @@ const bufferInput = document.getElementById('bufferInput');
 const pauseBtn = document.getElementById('pauseBtn');
 const discBtn = document.getElementById('discBtn');
 const copyBtn = document.getElementById('copyBtn');
+const copyTextBtn = document.getElementById('copyTextBtn');
 const toast = document.getElementById('toast');
 const legendEl = document.getElementById('legend');
 const segbar = document.getElementById('segbar');
@@ -563,34 +566,24 @@ function renderSegbar() {
   }
 }
 
-copyBtn.addEventListener('click', () => {
-  if (!segments.length) { showToast('no segments — drag on the chart to select one', true); return; }
-  exportSegments();
-});
-copyBtn.addEventListener('animationend', () => copyBtn.classList.remove('success'));
+copyBtn.addEventListener('click', () => exportSegments('full'));
+copyTextBtn.addEventListener('click', () => exportSegments('text'));
+for (const b of [copyBtn, copyTextBtn]) {
+  b.addEventListener('animationend', () => b.classList.remove('success'));
+}
 
-async function exportSegments() {
-  if (!window.isSecureContext) {
-    showToast('not a secure context — clipboard image write is blocked here', true);
-    return;
-  }
-  if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
-    showToast('this browser has no Clipboard image API', true);
-    return;
-  }
+function flashSuccess(btn) {
+  btn.classList.remove('success');
+  void btn.offsetWidth;   // restart the animation if it's mid-flight
+  btn.classList.add('success');
+}
+
+// mode 'full' = image + combined HTML + text; mode 'text' = text/plain only,
+// for fields whose paste handler grabs any clipboard image and drops the text.
+async function exportSegments(mode) {
+  if (!segments.length) { showToast('no segments — drag on the chart to select one', true); return; }
 
   const segs = [...segments].sort((a, b) => a.t0 - b.t0);
-  const spanT0 = segs[0].t0;
-  const spanT1 = Math.max(...segs.map(s => s.t1));
-  const margin = Math.max((spanT1 - spanT0) * 0.05, 0.5);
-
-  const W = 1200, H = 675, dpr = 2;
-  const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = W * dpr;
-  exportCanvas.height = H * dpr;
-  const ectx = exportCanvas.getContext('2d');
-  ectx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawFrame(ectx, W, H, spanT0 - margin, spanT1 + margin);
 
   const MAX_TEXT_POINTS = 300;
   const VALUES_PER_ROW = 10;
@@ -636,16 +629,63 @@ async function exportSegments() {
   }
   const summaryText = lines.join('\n').trimEnd();
 
+  if (mode === 'text') {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      showToast('clipboard unavailable — not a secure context?', true);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(summaryText);
+      flashSuccess(copyTextBtn);
+      showToast(`copied ${segs.length} segment(s) as text — no image on the clipboard`);
+    } catch (err) {
+      console.error('clipboard write failed', err);
+      showToast('clipboard failed: ' + err.name + ' - ' + err.message, true);
+    }
+    return;
+  }
+
+  if (!window.isSecureContext) {
+    showToast('not a secure context — clipboard image write is blocked here', true);
+    return;
+  }
+  if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+    showToast('this browser has no Clipboard image API', true);
+    return;
+  }
+
+  const spanT0 = segs[0].t0;
+  const spanT1 = Math.max(...segs.map(s => s.t1));
+  const margin = Math.max((spanT1 - spanT0) * 0.05, 0.5);
+
+  const W = 1200, H = 675, dpr = 2;
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = W * dpr;
+  exportCanvas.height = H * dpr;
+  const ectx = exportCanvas.getContext('2d');
+  ectx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawFrame(ectx, W, H, spanT0 - margin, spanT1 + margin);
+
   exportCanvas.toBlob(async (blob) => {
     if (!blob) { showToast('capture failed - no blob produced', true); return; }
     try {
+      // text/html carries image + text in ONE format, so rich editors (Gmail,
+      // Word, Notion...) paste both at once; plain fields still get text/plain
+      // and image-only targets image/png — a paste target picks a single format.
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(blob);
+      });
+      const escaped = summaryText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const html = `<img src="${dataUrl}" alt="SerialClip capture" style="max-width:100%"><pre>${escaped}</pre>`;
       await navigator.clipboard.write([new ClipboardItem({
         'image/png': blob,
+        'text/html': new Blob([html], { type: 'text/html' }),
         'text/plain': new Blob([summaryText], { type: 'text/plain' }),
       })]);
-      copyBtn.classList.remove('success');
-      void copyBtn.offsetWidth;   // restart the animation if it's mid-flight
-      copyBtn.classList.add('success');
+      flashSuccess(copyBtn);
       showToast(`copied ${segs.length} segment(s) — paste into Claude Code (Ctrl+V)`);
     } catch (err) {
       console.error('clipboard write failed', err);
@@ -870,6 +910,7 @@ fetch('/control/status')
 document.getElementById('about').innerHTML = ICONS.human;
 btnContent(pauseBtn, 'pause');
 btnContent(discBtn, 'unlink');
+btnContent(copyTextBtn, 'text', 'COPY TEXT');
 btnContent(copyBtn, 'copy', 'COPY SEGMENTS');
 btnContent(bufferForm.querySelector('button'), 'check');
 

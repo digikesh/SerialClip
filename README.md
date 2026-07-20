@@ -54,9 +54,13 @@ but isn't plotted.
   Rename it in its chip below the chart; delete with the ×. Segments that
   scroll fully off the buffer are auto-deleted.
 - **COPY SEGMENTS** puts one chart image (all segments highlighted) plus a
-  per-segment text block — stats and raw value rows — on the clipboard.
-  Paste the text into a terminal agent, the image into anything that takes
-  images. (Terminal agents read only the text side of the clipboard.)
+  per-segment text block — stats and raw value rows — on the clipboard, in
+  three formats: rich editors (Gmail, Word, Notion, GitHub comments) paste
+  image *and* text together; terminal agents get just the text; image-only
+  targets get just the chart. The paste target picks its preferred format.
+- **COPY TEXT** copies the same text block with no image attached — for
+  fields whose paste handler grabs any clipboard image and drops the text
+  (Discord-style chat inputs).
 - **Legend checkboxes** show/hide channels. Hidden channels are excluded from
   auto-scaling, segment exports, and `capture.py`.
 - **buffer (sec)** sets both the visible window and the retention limit.
@@ -100,6 +104,9 @@ Pauses the monitor (if running), compiles, uploads, resumes — win or lose.
   arrives (that's what splices the gap) — check the device is actually printing.
 - **Clipboard paste shows text but no image**: terminal apps only read the text
   clipboard format; paste the image into Cursor/Paint/etc. instead.
+- **A rich field pastes only the image, no text**: many editors take any
+  clipboard image as a file upload and never look at the text — use COPY TEXT
+  for those.
 - **Port busy**: only one process can hold a COM port — use DISCONNECT (or
   `/control/pause`) before opening it elsewhere.
 
